@@ -15,6 +15,7 @@ docs/
 
 .env
 **/appsettings.Development.json
+**/appsettings.Docker.json
 
 # Ignore all .md files in root directory except README.md
 /*.md
