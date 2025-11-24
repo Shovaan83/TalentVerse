@@ -44,7 +44,7 @@ public class AccountController : ControllerBase
                     Username = appUser.UserName,
                     Email = appUser.Email,
                     Bio = appUser.Bio,
-                    Token = _tokenService.CreateToken(appUser)
+                    Token = await _tokenService.CreateToken(appUser)
                 });
             }
             else
@@ -77,7 +77,7 @@ public class AccountController : ControllerBase
             Email = user.Email,
             Bio = user.Bio,
             ProfilePictureUrl = user.ProfilePictureURL,
-            Token = _tokenService.CreateToken(user)
+            Token = await _tokenService.CreateToken(user)
         });
     }
 }
