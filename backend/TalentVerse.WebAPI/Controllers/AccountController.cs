@@ -154,6 +154,33 @@ TalentVerse Team";
     }
 
     [Authorize]
+    [HttpGet("me")]
+    public async Task<ActionResult<ServiceResponse<CurrentUserDto>>> GetCurrentUser()
+    {
+        try
+        {
+            var user = await _userManager.GetUserAsync(User);
+            if (user == null)
+                return Unauthorized(ServiceResponse<CurrentUserDto>.FailureResponse("User not found."));
+
+            var dto = new CurrentUserDto
+            {
+                Username = user.UserName,
+                Email = user.Email,
+                Bio = user.Bio,
+                ProfilePictureUrl = user.ProfilePictureURL
+            };
+
+            return Ok(ServiceResponse<CurrentUserDto>.SuccessResponse(dto));
+        }
+        catch (Exception e)
+        {
+            _logger.LogError(e, "Get current user error");
+            return StatusCode(500, ServiceResponse<CurrentUserDto>.FailureResponse(AppConstant.ErrorMessages.GenerricError));
+        }
+    }
+
+    [Authorize]
     [HttpPost("request-2fa-code")]
     public async Task<ActionResult<ServiceResponse<string>>> RequestTwoFactorCode([FromServices] ITwoFactorService twoFactorService, [FromServices] IEmailService emailService)
     {
@@ -254,5 +281,102 @@ TalentVerse Team";
         };
 
         return Ok(ServiceResponse<UserDto>.SuccessResponse(userDto, "Login Successful via 2FA"));
+    }
+
+    [HttpPost("forgot-password")]
+    public async Task<ActionResult<ServiceResponse<string>>> ForgotPassword([FromBody] ForgotPasswordDto forgotPasswordDto, [FromServices] ITwoFactorService twoFactorService, [FromServices] IEmailService emailService)
+    {
+        try
+        {
+            var user = await _userManager.Users.FirstOrDefaultAsync(x => x.Email == forgotPasswordDto.Email.ToLower());
+
+            if (user == null)
+            {
+
+                return Ok(ServiceResponse<string>.SuccessResponse("", "If the email exists, a password reset code has been sent."));
+            }
+
+            // Generate reset code
+            var code = twoFactorService.GenerateCode();
+            await twoFactorService.StoreCodeAsync(user.Id, code);
+
+            var emailBody = $@"Hello {user.UserName},
+
+You requested to reset your password for TalentVerse.
+
+Your password reset code is: {code}
+
+This code will expire in 10 minutes.
+
+If you didn't request this, please ignore this email and secure your account.
+
+Best regards,
+TalentVerse Team";
+
+            await emailService.SendEmailAsync(user.Email, "Password Reset Code - TalentVerse", emailBody);
+
+            _logger.LogInformation($"Password reset code sent to {user.Email}");
+
+            return Ok(ServiceResponse<string>.SuccessResponse("", "If the email exists, a password reset code has been sent."));
+        }
+        catch (Exception e)
+        {
+            _logger.LogError(e, "Forgot Password Error");
+            return StatusCode(500, ServiceResponse<string>.FailureResponse("An error occurred. Please try again later."));
+        }
+    }
+
+    [HttpPost("reset-password")]
+    public async Task<ActionResult<ServiceResponse<string>>> ResetPassword([FromBody] ResetPasswordDto resetPasswordDto, [FromServices] ITwoFactorService twoFactorService)
+    {
+        try
+        {
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ServiceResponse<string>.FailureResponse("Validation Failed"));
+            }
+
+            var user = await _userManager.Users.FirstOrDefaultAsync(x => x.Email == resetPasswordDto.Email.ToLower());
+
+            if (user == null)
+            {
+                return BadRequest(ServiceResponse<string>.FailureResponse("Invalid request"));
+            }
+
+            var code = resetPasswordDto.Code.Trim();
+
+            if (code.Length != 6 || !code.All(char.IsDigit))
+            {
+                return BadRequest(ServiceResponse<string>.FailureResponse("Code must be exactly 6 digits"));
+            }
+
+            // Validate the code
+            var isValid = await twoFactorService.ValidateCodeAsync(user.Id, code);
+
+            if (!isValid)
+            {
+                _logger.LogWarning($"Invalid password reset code for user {user.Email}");
+                return BadRequest(ServiceResponse<string>.FailureResponse("Invalid or expired code"));
+            }
+
+            // Remove current password and set new one
+            var token = await _userManager.GeneratePasswordResetTokenAsync(user);
+            var result = await _userManager.ResetPasswordAsync(user, token, resetPasswordDto.NewPassword);
+
+            if (!result.Succeeded)
+            {
+                var errors = result.Errors.Select(e => e.Description).ToList();
+                return BadRequest(ServiceResponse<string>.FailureResponse("Password reset failed", errors));
+            }
+
+            _logger.LogInformation($"Password reset successful for user {user.Email}");
+
+            return Ok(ServiceResponse<string>.SuccessResponse("", "Password has been reset successfully. You can now login with your new password."));
+        }
+        catch (Exception e)
+        {
+            _logger.LogError(e, "Reset Password Error");
+            return StatusCode(500, ServiceResponse<string>.FailureResponse("An error occurred. Please try again later."));
+        }
     }
 }
