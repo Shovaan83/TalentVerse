@@ -6,7 +6,7 @@ import { z } from "zod";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Check, User, Mail, Lock, FileText, Loader2 } from "lucide-react";
+import { ArrowLeft, Check, User, Mail, Lock, FileText, Loader2, Eye, EyeOff } from "lucide-react";
 import { motion } from "framer-motion";
 import axiosInstance from "@/lib/axios";
 import AuthLayout from "../components/AuthLayout";
@@ -27,6 +27,7 @@ export default function RegisterPage() {
   const router = useRouter();
   const [isLoading, setIsLoading] = useState(false);
   const [apiError, setApiError] = useState<string | null>(null);
+  const [showPassword, setShowPassword] = useState(false);
 
   const {
     register,
@@ -41,21 +42,32 @@ export default function RegisterPage() {
     setApiError(null);
 
     try {
-      const response = await axiosInstance.post("/api/account/register", {
+      const payload = {
         username: data.username,
         email: data.email,
         password: data.password,
-        bio: data.bio || undefined,
-      });
+        bio: data.bio || "",
+      };
 
-      if (response.data.token) {
-        localStorage.setItem("token", response.data.token);
-        router.push("/dashboard");
+      console.log("Registration payload:", payload);
+
+      const response = await axiosInstance.post("/api/account/register", payload);
+
+      console.log("Registration response:", response.data);
+
+      if (response.data.success && response.data.data?.token) {
+        localStorage.setItem("token", response.data.data.token);
+        router.push("/setup-2fa");
+      } else {
+        setApiError(response.data.message || "Registration failed");
       }
     } catch (error: any) {
+      console.error("Registration error:", error.response?.data);
+      
       const errorMessage =
         error.response?.data?.message ||
         error.response?.data?.title ||
+        error.response?.data?.errors?.[0] ||
         "Registration failed. Please try again.";
       setApiError(errorMessage);
     } finally {
@@ -162,11 +174,22 @@ export default function RegisterPage() {
               <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 group-focus-within:text-emerald-600 transition-colors" />
               <input
                 id="password"
-                type="password"
+                type={showPassword ? "text" : "password"}
                 {...register("password")}
-                className={`w-full pl-10 pr-3 py-2.5 bg-gray-50 border ${errors.password ? 'border-red-300 focus:border-red-500 focus:ring-red-200' : 'border-gray-200 focus:border-emerald-600 focus:ring-emerald-100'} rounded-lg focus:outline-none focus:ring-2 transition-all text-sm text-gray-900 placeholder-gray-400 font-medium`}
+                className={`w-full pl-10 pr-10 py-2.5 bg-gray-50 border ${errors.password ? 'border-red-300 focus:border-red-500 focus:ring-red-200' : 'border-gray-200 focus:border-emerald-600 focus:ring-emerald-100'} rounded-lg focus:outline-none focus:ring-2 transition-all text-sm text-gray-900 placeholder-gray-400 font-medium`}
                 placeholder="Min. 8 characters with special character"
               />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                {showPassword ? (
+                  <EyeOff className="w-4 h-4" />
+                ) : (
+                  <Eye className="w-4 h-4" />
+                )}
+              </button>
             </div>
             {errors.password && (
               <p className="text-xs text-red-600 font-medium pl-1">
@@ -188,7 +211,7 @@ export default function RegisterPage() {
                 <Check className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-3 h-3 text-white opacity-0 peer-checked:opacity-100 pointer-events-none" strokeWidth={3} />
               </div>
               <span className="ml-2 text-xs font-medium text-gray-600 group-hover:text-gray-900 transition-colors">
-                I agree to the <Link href="/terms" className="font-bold text-emerald-600 hover:underline">Terms of Service</Link> and <Link href="/privacy" className="font-bold text-emerald-600 hover:underline">Privacy Policy</Link>
+                I agree to the <span className="font-bold text-emerald-600">Terms of Service</span> and <span className="font-bold text-emerald-600">Privacy Policy</span>
               </span>
             </label>
             {errors.agreeToTerms && (

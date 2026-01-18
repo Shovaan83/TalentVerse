@@ -3,13 +3,14 @@
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Check, Mail, Lock, Loader2 } from "lucide-react";
+import { ArrowLeft, Check, Mail, Lock, Loader2, Eye, EyeOff } from "lucide-react";
 import { motion } from "framer-motion";
 import axiosInstance from "@/lib/axios";
 import AuthLayout from "../components/AuthLayout";
+import TwoFactorVerification from "../components/TwoFactorVerification";
 
 const loginSchema = z.object({
   email: z.string().email("Invalid email address"),
@@ -23,14 +24,34 @@ export default function LoginPage() {
   const router = useRouter();
   const [isLoading, setIsLoading] = useState(false);
   const [apiError, setApiError] = useState<string | null>(null);
+  const [show2FA, setShow2FA] = useState(false);
+  const [userEmail, setUserEmail] = useState("");
+  const [emailSent, setEmailSent] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   const {
     register,
     handleSubmit,
     formState: { errors },
+    setValue,
   } = useForm<LoginFormData>({
     resolver: zodResolver(loginSchema),
+    defaultValues: {
+      rememberMe: false,
+    },
   });
+
+  // Auto-fill email if remembered
+  useEffect(() => {
+    const rememberMe = localStorage.getItem("rememberMe");
+    const savedEmail = localStorage.getItem("userEmail");
+    if (rememberMe === "true" && savedEmail) {
+      setValue("email", savedEmail);
+      setValue("rememberMe", true);
+    }
+  }, [setValue]);
+
+
 
   const onSubmit = async (data: LoginFormData) => {
     setIsLoading(true);
@@ -42,9 +63,28 @@ export default function LoginPage() {
         password: data.password,
       });
 
-      if (response.data.token) {
-        localStorage.setItem("token", response.data.token);
-        router.push("/dashboard");
+      if (response.data.success) {
+        const userData = response.data.data;
+        
+        if (userData?.isTwoFactorRequired) {
+          setUserEmail(data.email);
+          setEmailSent(true);
+          setShow2FA(true);
+        } else if (userData?.token) {
+          // Handle Remember Me
+          if (data.rememberMe) {
+            localStorage.setItem("token", userData.token);
+            localStorage.setItem("rememberMe", "true");
+            localStorage.setItem("userEmail", data.email);
+          } else {
+            localStorage.setItem("token", userData.token);
+            localStorage.removeItem("rememberMe");
+            localStorage.removeItem("userEmail");
+          }
+          router.push("/profile");
+        }
+      } else {
+        setApiError(response.data.message || "Login failed");
       }
     } catch (error: any) {
       const errorMessage =
@@ -57,10 +97,28 @@ export default function LoginPage() {
     }
   };
 
+  if (show2FA) {
+    return (
+      <AuthLayout 
+        title="Welcome back, Creator." 
+        subtitle="Log in to access your profile, manage your swaps, and connect with your network."
+      >
+        <TwoFactorVerification 
+          email={userEmail} 
+          onBack={() => {
+            setShow2FA(false);
+            setEmailSent(false);
+          }}
+          emailSent={emailSent}
+        />
+      </AuthLayout>
+    );
+  }
+
   return (
     <AuthLayout 
       title="Welcome back, Creator." 
-      subtitle="Log in to access your dashboard, manage your swaps, and connect with your network."
+      subtitle="Log in to access your profile, manage your swaps, and connect with your network."
     >
       <motion.div
         initial={{ opacity: 0, y: 20 }}
@@ -139,11 +197,22 @@ export default function LoginPage() {
               <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 group-focus-within:text-emerald-600 transition-colors" />
               <input
                 id="password"
-                type="password"
+                type={showPassword ? "text" : "password"}
                 {...register("password")}
-                className={`w-full pl-12 pr-4 py-3.5 bg-gray-50 border ${errors.password ? 'border-red-300 focus:border-red-500 focus:ring-red-200' : 'border-gray-200 focus:border-emerald-600 focus:ring-emerald-100'} rounded-xl focus:outline-none focus:ring-4 transition-all text-gray-900 placeholder-gray-400 font-medium`}
+                className={`w-full pl-12 pr-12 py-3.5 bg-gray-50 border ${errors.password ? 'border-red-300 focus:border-red-500 focus:ring-red-200' : 'border-gray-200 focus:border-emerald-600 focus:ring-emerald-100'} rounded-xl focus:outline-none focus:ring-4 transition-all text-gray-900 placeholder-gray-400 font-medium`}
                 placeholder="••••••••"
               />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                {showPassword ? (
+                  <EyeOff className="w-5 h-5" />
+                ) : (
+                  <Eye className="w-5 h-5" />
+                )}
+              </button>
             </div>
             {errors.password && (
               <p className="text-sm text-red-600 font-medium pl-1">
